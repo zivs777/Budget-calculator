@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+    <title>Budget Planner</title>
+    <script src=\"https://cdn.tailwindcss.com\"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        border: \"hsl(214.3 31.8% 91.4%)\",
+                        input: \"hsl(214.3 31.8% 91.4%)\",
+                        ring: \"hsl(222.2 84% 4.9%)\",
+                        background: \"hsl(0 0% 100%)\",
+                        foreground: \"hsl(222.2 84% 4.9%)\",
+                        primary: {
+                            DEFAULT: \"hsl(222.2 47.4% 11.2%)\",
+                            foreground: \"hsl(210 40% 98%)\",
+                        },
+                        secondary: {
+                            DEFAULT: \"hsl(210 40% 96%)\",
+                            foreground: \"hsl(222.2 84% 4.9%)\",
+                        },
+                        destructive: {
+                            DEFAULT: \"hsl(0 84.2% 60.2%)\",
+                            foreground: \"hsl(210 40% 98%)\",
+                        },
+                        muted: {
+                            DEFAULT: \"hsl(210 40% 96%)\",
+                            foreground: \"hsl(215.4 16.3% 43.9%)\",
+                        },
+                        accent: {
+                            DEFAULT: \"hsl(210 40% 96%)\",
+                            foreground: \"hsl(222.2 84% 4.9%)\",
+                        },
+                        popover: {
+                            DEFAULT: \"hsl(0 0% 100%)\",
+                            foreground: \"hsl(222.2 84% 4.9%)\",
+                        },
+                        card: {
+                            DEFAULT: \"hsl(0 0% 100%)\",
+                            foreground: \"hsl(222.2 84% 4.9%)\",
+                        },
+                    },
+                    borderRadius: {
+                        lg: \"var(--radius)\",
+                        md: \"calc(var(--radius) - 2px)\",
+                        sm: \"calc(var(--radius) - 4px)\",
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --radius: 0.5rem;
+        }
+        
+        .card {
+            @apply rounded-lg border bg-card text-card-foreground shadow-sm;
+        }
+        
+        .card-header {
+            @apply flex flex-col space-y-1.5 p-6;
+        }
+        
+        .card-content {
+            @apply p-6 pt-0;
+        }
+        
+        .button {
+            @apply inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+        }
+        
+        .button-primary {
+            @apply bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2;
+        }
+        
+        .input {
+            @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+        }
+        
+        .progress {
+            @apply relative h-4 w-full overflow-hidden rounded-full bg-secondary;
+        }
+        
+        .progress-indicator {
+            @apply h-full w-full flex-1 bg-primary transition-all;
+        }
+        
+        .badge {
+            @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+        }
+        
+        .modal {
+            @apply fixed inset-0 z-50 bg-background/80 backdrop-blur-sm;
+        }
+        
+        .modal-content {
+            @apply fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg;
+        }
+    </style>
+</head>
+<body class=\"min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100\">
+    <div class=\"max-w-7xl mx-auto p-4 space-y-6\">
+        <!-- Header -->
+        <div class=\"text-center py-6\">
+            <h1 class=\"text-4xl font-bold text-gray-800 mb-2\">Budget Planner</h1>
+            <p class=\"text-gray-600\">Track your income and expenses with ease</p>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class=\"grid grid-cols-1 md:grid-cols-3 gap-6\">
+            <!-- Total Income Card -->
+            <div class=\"card bg-gradient-to-r from-green-100 to-green-200 border-green-300\">
+                <div class=\"card-header flex flex-row items-center justify-between space-y-0 pb-2\">
+                    <h3 class=\"text-sm font-medium text-green-800\">Total Income</h3>
+                    <svg class=\"h-4 w-4 text-green-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 7h8m0 0v8m0-8l-8 8-4-4-6 6\"/>
+                    </svg>
+                </div>
+                <div class=\"card-content\">
+                    <div class=\"text-2xl font-bold text-green-800\">$3,500.00</div>
+                </div>
+            </div>
+
+            <!-- Total Expenses Card -->
+            <div class=\"card bg-gradient-to-r from-red-100 to-red-200 border-red-300\">
+                <div class=\"card-header flex flex-row items-center justify-between space-y-0 pb-2\">
+                    <h3 class=\"text-sm font-medium text-red-800\">Total Expenses</h3>
+                    <svg class=\"h-4 w-4 text-red-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
+                    </svg>
+                </div>
+                <div class=\"card-content\">
+                    <div class=\"text-2xl font-bold text-red-800\">$2,150.25</div>
+                </div>
+            </div>
+
+            <!-- Balance Card -->
+            <div class=\"card bg-gradient-to-r from-blue-100 to-blue-200 border-blue-300\">
+                <div class=\"card-header flex flex-row items-center justify-between space-y-0 pb-2\">
+                    <h3 class=\"text-sm font-medium text-blue-800\">Balance</h3>
+                    <svg class=\"h-4 w-4 text-blue-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1\"/>
+                    </svg>
+                </div>
+                <div class=\"card-content\">
+                    <div class=\"text-2xl font-bold text-blue-800\">$1,349.75</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Transaction Button -->
+        <div class=\"flex justify-center\">
+            <button class=\"button button-primary bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105\" onclick=\"showTransactionModal()\">
+                <svg class=\"mr-2 h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                    <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 4v16m8-8H4\"/>
+                </svg>
+                Add Transaction
+            </button>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class=\"grid grid-cols-1 lg:grid-cols-2 gap-6\">
+            <!-- Left Column - Category Summary -->
+            <div class=\"space-y-6\">
+                <div class=\"card bg-white/80 backdrop-blur-sm shadow-lg border-0\">
+                    <div class=\"card-header\">
+                        <h3 class=\"text-lg font-semibold text-gray-800\">Category Summary</h3>
+                    </div>
+                    <div class=\"card-content\">
+                        <div class=\"space-y-4\">
+                            <!-- Food Category -->
+                            <div class=\"space-y-2\">
+                                <div class=\"flex items-center justify-between\">
+                                    <div class=\"flex items-center space-x-2\">
+                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #FFE4E1;\"></div>
+                                        <span class=\"font-medium text-gray-700\">Food</span>
+                                    </div>
+                                    <div class=\"text-sm font-medium\">
+                                        <span class=\"text-gray-600\">$61.25</span>
+                                        <span class=\"text-gray-400\"> / $500</span>
+                                    </div>
+                                </div>
+                                <div class=\"space-y-1\">
+                                    <div class=\"progress\">
+                                        <div class=\"progress-indicator\" style=\"width: 12.25%; background-color: #10b981;\"></div>
+                                    </div>
+                                    <div class=\"flex justify-between text-xs text-gray-500\">
+                                        <span>12.3% used</span>
+                                        <span>$438.75 left</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Transportation Category -->
+                            <div class=\"space-y-2\">
+                                <div class=\"flex items-center justify-between\">
+                                    <div class=\"flex items-center space-x-2\">
+                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #E6F3FF;\"></div>
+                                        <span class=\"font-medium text-gray-700\">Transportation</span>
+                                    </div>
+                                    <div class=\"text-sm font-medium\">
+                                        <span class=\"text-gray-600\">$25.00</span>
+                                        <span class=\"text-gray-400\"> / $300</span>
+                                    </div>
+                                </div>
+                                <div class=\"space-y-1\">
+                                    <div class=\"progress\">
+                                        <div class=\"progress-indicator\" style=\"width: 8.33%; background-color: #10b981;\"></div>
+                                    </div>
+                                    <div class=\"flex justify-between text-xs text-gray-500\">
+                                        <span>8.3% used</span>
+                                        <span>$275.00 left</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Entertainment Category -->
+                            <div class=\"space-y-2\">
+                                <div class=\"flex items-center justify-between\">
+                                    <div class=\"flex items-center space-x-2\">
+                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #F0FFF0;\"></div>
+                                        <span class=\"font-medium text-gray-700\">Entertainment</span>
+                                    </div>
+                                    <div class=\"text-sm font-medium\">
+                                        <span class=\"text-gray-600\">$80.00</span>
+                                        <span class=\"text-gray-400\"> / $200</span>
+                                    </div>
+                                </div>
+                                <div class=\"space-y-1\">
+                                    <div class=\"progress\">
+                                        <div class=\"progress-indicator\" style=\"width: 40%; background-color: #10b981;\"></div>
+                                    </div>
+                                    <div class=\"flex justify-between text-xs text-gray-500\">
+                                        <span>40.0% used</span>
+                                        <span>$120.00 left</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bills Category -->
+                            <div class=\"space-y-2\">
+                                <div class=\"flex items-center justify-between\">
+                                    <div class=\"flex items-center space-x-2\">
+                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #FFF8DC;\"></div>
+                                        <span class=\"font-medium text-gray-700\">Bills</span>
+                                    </div>
+                                    <div class=\"text-sm font-medium\">
+                                        <span class=\"text-gray-600\">$120.00</span>
+                                        <span class=\"text-gray-400\"> / $800</span>
+                                    </div>
+                                </div>
+                                <div class=\"space-y-1\">
+                                    <div class=\"progress\">
+                                        <div class=\"progress-indicator\" style=\"width: 15%; background-color: #10b981;\"></div>
+                                    </div>
+                                    <div class=\"flex justify-between text-xs text-gray-500\">
+                                        <span>15.0% used</span>
+                                        <span>$680.00 left</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Shopping Category -->
+                            <div class=\"space-y-2\">
+                                <div class=\"flex items-center justify-between\">
+                                    <div class=\"flex items-center space-x-2\">
+                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #F5F0FF;\"></div>
+                                        <span class=\"font-medium text-gray-700\">Shopping</span>
+                                    </div>
+                                    <div class=\"text-sm font-medium\">
+                                        <span class=\"text-gray-600\">$200.00</span>
+                                        <span class=\"text-gray-400\"> / $400</span>
+                                    </div>
+                                </div>
+                                <div class=\"space-y-1\">
+                                    <div class=\"progress\">
+                                        <div class=\"progress-indicator\" style=\"width: 50%; background-color: #10b981;\"></div>
+                                    </div>
+                                    <div class=\"flex justify-between text-xs text-gray-500\">
+                                        <span>50.0% used</span>
+                                        <span>$200.00 left</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Healthcare Category -->
+                            <div class=\"space-y-2\">
+                                <div class=\"flex items-center justify-between\">
+                                    <div class=\"flex items-center space-x-2\">
+                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #FFE4E6;\"></div>
+                                        <span class=\"font-medium text-gray-700\">Healthcare</span>
+                                    </div>
+                                    <div class=\"text-sm font-medium\">
+                                        <span class=\"text-gray-600\">$60.00</span>
+                                        <span class=\"text-gray-400\"> / $250</span>
+                                    </div>
+                                </div>
+                                <div class=\"space-y-1\">
+                                    <div class=\"progress\">
+                                        <div class=\"progress-indicator\" style=\"width: 24%; background-color: #10b981;\"></div>
+                                    </div>
+                                    <div class=\"flex justify-between text-xs text-gray-500\">
+                                        <span>24.0% used</span>
+                                        <span>$190.00 left</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monthly Chart -->
+                <div class=\"card bg-white/80 backdrop-blur-sm shadow-lg border-0\">
+                    <div class=\"card-header\">
+                        <h3 class=\"text-lg font-semibold text-gray-800 flex items-center\">
+                            <svg class=\"mr-2 h-5 w-5 text-purple-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z\"/>
+                            </svg>
+                            Monthly Overview
+                        </h3>
+                    </div>
+                    <div class=\"card-content\">
+                        <div class=\"space-y-6\">
+                            <!-- January 2025 -->
+                            <div class=\"space-y-3\">
+                                <div class=\"flex justify-between items-center\">
+                                    <h4 class=\"font-medium text-gray-700\">Jan 2025</h4>
+                                    <div class=\"text-sm text-gray-500\">
+                                        Net: <span class=\"font-medium text-green-600\">$1,349.75</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Income Bar -->
+                                <div class=\"space-y-1\">
+                                    <div class=\"flex justify-between text-sm\">
+                                        <span class=\"text-green-700 font-medium\">Income</span>
+                                        <span class=\"text-green-700\">$3,500.00</span>
+                                    </div>
+                                    <div class=\"w-full bg-gray-200 rounded-full h-3\">
+                                        <div class=\"bg-gradient-to-r from-green-400 to-green-500 h-3 rounded-full transition-all duration-500 ease-out\" style=\"width: 100%;\"></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Expenses Bar -->
+                                <div class=\"space-y-1\">
+                                    <div class=\"flex justify-between text-sm\">
+                                        <span class=\"text-red-700 font-medium\">Expenses</span>
+                                        <span class=\"text-red-700\">$2,150.25</span>
+                                    </div>
+                                    <div class=\"w-full bg-gray-200 rounded-full h-3\">
+                                        <div class=\"bg-gradient-to-r from-red-400 to-red-500 h-3 rounded-full transition-all duration-500 ease-out\" style=\"width: 61.4%;\"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column - Recent Transactions -->
+            <div class=\"space-y-6\">
+                <div class=\"card bg-white/80 backdrop-blur-sm shadow-lg border-0\">
+                    <div class=\"card-header\">
+                        <h3 class=\"text-lg font-semibold text-gray-800 flex items-center\">
+                            Recent Transactions
+                            <span class=\"badge ml-2 bg-purple-100 text-purple-700\">8</span>
+                        </h3>
+                    </div>
+                    <div class=\"card-content\">
+                        <div class=\"space-y-3 max-h-96 overflow-y-auto\">
+                            <!-- Transaction 1 -->
+                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
+                                <div class=\"flex items-center space-x-3\">
+                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #FFE4E1;\"></div>
+                                    <div class=\"flex-1 min-w-0\">
+                                        <div class=\"flex items-center space-x-2\">
+                                            <p class=\"font-medium text-gray-900 truncate\">Grocery shopping</p>
+                                            <svg class=\"h-4 w-4 text-red-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
+                                            </svg>
+                                        </div>
+                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
+                                            <span>Food</span>
+                                            <span>•</span>
+                                            <span>Jan 15</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class=\"flex-shrink-0\">
+                                    <span class=\"font-semibold text-red-600\">-$45.50</span>
+                                </div>
+                            </div>
+
+                            <!-- Transaction 2 -->
+                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
+                                <div class=\"flex items-center space-x-3\">
+                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #E6F3FF;\"></div>
+                                    <div class=\"flex-1 min-w-0\">
+                                        <div class=\"flex items-center space-x-2\">
+                                            <p class=\"font-medium text-gray-900 truncate\">Gas</p>
+                                            <svg class=\"h-4 w-4 text-red-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
+                                            </svg>
+                                        </div>
+                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
+                                            <span>Transportation</span>
+                                            <span>•</span>
+                                            <span>Jan 14</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class=\"flex-shrink-0\">
+                                    <span class=\"font-semibold text-red-600\">-$25.00</span>
+                                </div>
+                            </div>
+
+                            <!-- Transaction 3 - Income -->
+                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
+                                <div class=\"flex items-center space-x-3\">
+                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #F3F4F6;\"></div>
+                                    <div class=\"flex-1 min-w-0\">
+                                        <div class=\"flex items-center space-x-2\">
+                                            <p class=\"font-medium text-gray-900 truncate\">Monthly salary</p>
+                                            <svg class=\"h-4 w-4 text-green-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 7h8m0 0v8m0-8l-8 8-4-4-6 6\"/>
+                                            </svg>
+                                        </div>
+                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
+                                            <span>Salary</span>
+                                            <span>•</span>
+                                            <span>Jan 1</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class=\"flex-shrink-0\">
+                                    <span class=\"font-semibold text-green-600\">+$3,500.00</span>
+                                </div>
+                            </div>
+
+                            <!-- More transactions... -->
+                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
+                                <div class=\"flex items-center space-x-3\">
+                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #FFF8DC;\"></div>
+                                    <div class=\"flex-1 min-w-0\">
+                                        <div class=\"flex items-center space-x-2\">
+                                            <p class=\"font-medium text-gray-900 truncate\">Electricity bill</p>
+                                            <svg class=\"h-4 w-4 text-red-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
+                                            </svg>
+                                        </div>
+                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
+                                            <span>Bills</span>
+                                            <span>•</span>
+                                            <span>Jan 13</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class=\"flex-shrink-0\">
+                                    <span class=\"font-semibold text-red-600\">-$120.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Modal (Hidden by default) -->
+    <div id=\"transactionModal\" class=\"modal hidden\">
+        <div class=\"modal-content\">
+            <div class=\"flex items-center justify-between\">
+                <h3 class=\"text-xl font-semibold text-gray-800\">Add Transaction</h3>
+                <button onclick=\"hideTransactionModal()\" class=\"text-gray-500 hover:text-gray-700\">
+                    <svg class=\"h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
+                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M6 18L18 6M6 6l12 12\"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <form class=\"space-y-4 mt-4\">
+                <!-- Transaction Type -->
+                <div class=\"space-y-2\">
+                    <label class=\"text-sm font-medium\">Type</label>
+                    <select class=\"input\">
+                        <option>Select transaction type</option>
+                        <option value=\"income\">Income</option>
+                        <option value=\"expense\">Expense</option>
+                    </select>
+                </div>
+
+                <!-- Amount -->
+                <div class=\"space-y-2\">
+                    <label class=\"text-sm font-medium\">Amount ($)</label>
+                    <input type=\"number\" step=\"0.01\" placeholder=\"0.00\" class=\"input\">
+                </div>
+
+                <!-- Category -->
+                <div class=\"space-y-2\">
+                    <label class=\"text-sm font-medium\">Category</label>
+                    <select class=\"input\">
+                        <option>Select category</option>
+                        <option value=\"Food\">Food</option>
+                        <option value=\"Transportation\">Transportation</option>
+                        <option value=\"Entertainment\">Entertainment</option>
+                        <option value=\"Bills\">Bills</option>
+                        <option value=\"Shopping\">Shopping</option>
+                        <option value=\"Healthcare\">Healthcare</option>
+                    </select>
+                </div>
+
+                <!-- Description -->
+                <div class=\"space-y-2\">
+                    <label class=\"text-sm font-medium\">Description</label>
+                    <textarea placeholder=\"Enter transaction description\" class=\"input h-20 resize-none\"></textarea>
+                </div>
+
+                <!-- Date -->
+                <div class=\"space-y-2\">
+                    <label class=\"text-sm font-medium\">Date</label>
+                    <input type=\"date\" class=\"input\">
+                </div>
+
+                <!-- Submit Buttons -->
+                <div class=\"flex space-x-3 pt-4\">
+                    <button type=\"button\" onclick=\"hideTransactionModal()\" class=\"button flex-1 border border-gray-300 bg-white hover:bg-gray-50\">
+                        Cancel
+                    </button>
+                    <button type=\"submit\" class=\"button button-primary flex-1 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white\">
+                        Add Transaction
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showTransactionModal() {
+            document.getElementById('transactionModal').classList.remove('hidden');
+        }
+
+        function hideTransactionModal() {
+            document.getElementById('transactionModal').classList.add('hidden');
+        }
+
+        // Basic form handling (static - doesn't actually save data)
+        document.querySelector('form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('This is a static HTML demo. The React version has full functionality!');
+            hideTransactionModal();
+        });
+
+        // Close modal when clicking outside
+        document.getElementById('transactionModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideTransactionModal();
+            }
+        });
+    </script>
+</body>
+</html>"
+Observation: Create successful: /app/github-files/budget-planner-static.html
