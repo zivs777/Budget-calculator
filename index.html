@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personal Budget Tracker</title>
-    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Use Inter font family -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         body {
@@ -41,7 +39,6 @@
         <h1 class="text-4xl font-extrabold text-gray-900 mb-2">My Budget Hub</h1>
         <p class="text-gray-600 mb-8">Track your money flow in real-time.</p>
 
-        <!-- Loading Spinner and Error Message -->
         <div id="loading-indicator" class="text-center p-6 bg-white rounded-xl shadow-lg transition-opacity duration-300">
             <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -51,9 +48,7 @@
         </div>
         <p id="error-message" class="text-red-600 font-semibold mt-4 hidden"></p>
 
-        <!-- Main Content Area -->
         <div id="main-content" class="w-full max-w-4xl opacity-0 transition-opacity duration-500 hidden">
-            <!-- Header and Balance -->
             <div class="bg-white p-6 rounded-2xl shadow-xl mb-6">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
                     <p class="text-lg font-medium text-gray-500">Current Balance</p>
@@ -66,7 +61,6 @@
                             <option value="¥">¥ (JPY/CNY)</option>
                             <option value="₹">₹ (INR)</option>
                             <option value="A$">A$ (AUD)</option>
-                            <!-- NEW: Added UAE Dirham -->
                             <option value="د.إ">د.إ (AED)</option>
                         </select>
                     </div>
@@ -75,10 +69,8 @@
                 <p class="text-xs text-gray-400 mt-2">User ID: <span id="user-id-display" class="font-mono text-sm">...</span></p>
             </div>
 
-            <!-- Transaction Input Forms -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
-                <!-- Income Input Card -->
                 <div class="bg-green-50 border-2 border-green-200 p-6 rounded-2xl shadow-lg">
                     <h2 class="text-2xl font-bold text-green-700 mb-4">Add Income</h2>
                     <form id="income-form" onsubmit="handleTransaction(event, 'income')">
@@ -95,7 +87,6 @@
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                     <span id="income-currency-symbol" class="text-gray-500 sm:text-sm">$</span>
                                 </div>
-                                <!-- FIX: Changed type to 'text' and added inputmode/pattern for better cross-locale input -->
                                 <input type="text" id="income-amount" name="amount" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]+" required placeholder="500.00" class="block w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-green-500 focus:border-green-500">
                             </div>
                             <p id="income-error" class="text-sm text-red-500 mt-1 hidden font-medium">Please enter a valid positive number (e.g., 100.00 or 100,00).</p>
@@ -107,7 +98,6 @@
                     </form>
                 </div>
 
-                <!-- Expense Input Card -->
                 <div class="bg-red-50 border-2 border-red-200 p-6 rounded-2xl shadow-lg">
                     <h2 class="text-2xl font-bold text-red-700 mb-4">Add Expense</h2>
                     <form id="expense-form" onsubmit="handleTransaction(event, 'expense')">
@@ -135,7 +125,6 @@
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                     <span id="expense-currency-symbol" class="text-gray-500 sm:text-sm">$</span>
                                 </div>
-                                <!-- FIX: Changed type to 'text' and added inputmode/pattern for better cross-locale input -->
                                 <input type="text" id="expense-amount" name="amount" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]+" required placeholder="25.50" class="block w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-red-500 focus:border-red-500">
                             </div>
                             <p id="expense-error" class="text-sm text-red-500 mt-1 hidden font-medium">Please enter a valid positive number (e.g., 25.50 or 25,50).</p>
@@ -148,16 +137,13 @@
                 </div>
             </div>
 
-            <!-- Transaction History -->
             <div class="bg-white p-6 rounded-2xl shadow-xl">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Transaction History</h2>
                 <div id="transactions-list" class="space-y-3 custom-scroll max-h-96 overflow-y-auto p-2">
-                    <!-- Transactions will be rendered here -->
                     <p class="text-center text-gray-500 p-4" id="no-transactions-message">No transactions recorded yet. Add your first income or expense!</p>
                 </div>
             </div>
 
-            <!-- Custom Modal for Delete Confirmation -->
             <div id="delete-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
                 <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
                     <h3 class="text-xl font-bold text-red-600 mb-4">Confirm Deletion</h3>
@@ -171,16 +157,30 @@
         </div>
     </div>
 
-    <!-- Firebase Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, addDoc, onSnapshot, collection, query, deleteDoc, serverTimestamp, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- GLOBAL VARIABLES & CONSTANTS ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-budget-app';
+
+        // ====================================================================
+        // !!! FIX REQUIRED: INSERT YOUR FIREBASE CONFIGURATION HERE !!!
+        // ====================================================================
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY_HERE", 
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID",
+            // measurementId: "G-XXXXXXXXXX" // Uncomment if you have measurement ID
+        };
+        // ====================================================================
+        
+        // These are simplified for static deployment on platforms like GitHub Pages
+        const initialAuthToken = null; 
+        const appId = firebaseConfig.projectId;
 
         let app, db, auth;
         let userId = null;
@@ -197,14 +197,14 @@
         const userIdDisplay = document.getElementById('user-id-display');
 
         // Firestore paths utility
-        const getPrivatePath = (collectionName) => `/artifacts/${appId}/users/${userId}/${collectionName}`;
-        const getSettingsDocRef = () => doc(db, getPrivatePath('settings'), 'user_preferences');
+        const getPrivatePath = (collectionName) => `artifacts/${appId}/users/${userId}/${collectionName}`;
+        const getSettingsDocRef = () => doc(db, `artifacts/${appId}/users/${userId}/settings`, 'user_preferences');
 
         // --- AUTHENTICATION & INITIALIZATION ---
         window.initializeAppData = async () => {
-            if (!firebaseConfig) {
-                console.error("Firebase config not found. Running in mock mode.");
-                errorMessage.textContent = "Error: Firebase configuration is missing. Cannot save data.";
+            if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
+                console.error("Firebase config not found or is placeholder. Cannot save data.");
+                errorMessage.textContent = "Error: Please update the 'firebaseConfig' in the script with your actual Firebase keys.";
                 errorMessage.classList.remove('hidden');
                 loadingIndicator.classList.add('hidden');
                 mainContent.classList.remove('hidden');
@@ -220,12 +220,9 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 1. Authenticate User
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // 1. Authenticate User (Anonymously, since token is null)
+                // Note: signInWithCustomToken is removed as initialAuthToken is null
+                await signInAnonymously(auth);
 
                 // 2. Wait for Auth state to be ready
                 onAuthStateChanged(auth, (user) => {
@@ -302,7 +299,10 @@
         // --- TRANSACTION LOGIC (CRUD) ---
 
         const startTransactionListener = () => {
-            const q = query(collection(db, getPrivatePath('transactions')));
+            // FIX: Removed the unnecessary collection path utility since the docRef already contains the full path
+            const transactionsCollectionRef = collection(db, getPrivatePath('transactions'));
+
+            const q = query(transactionsCollectionRef);
             // Listen for real-time updates
             onSnapshot(q, (snapshot) => {
                 transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -347,6 +347,7 @@
             }
 
             try {
+                // FIX: Use the db instance and the collection path. This is the critical line.
                 await addDoc(collection(db, getPrivatePath('transactions')), {
                     type: type, // 'income' or 'expense'
                     description: description,
@@ -431,7 +432,6 @@
                             <p class="font-bold text-xl mt-2 sm:mt-0 sm:ml-4 flex-shrink-0">${formattedAmount}</p>
                         </div>
                         <button onclick="deleteTransaction('${t.id}')" class="ml-4 p-2 text-gray-400 hover:text-red-500 rounded-full transition duration-150 flex-shrink-0">
-                            <!-- Trash icon SVG -->
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
                             </svg>
