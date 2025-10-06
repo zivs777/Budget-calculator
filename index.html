@@ -1,567 +1,441 @@
-<!DOCTYPE html>
-<html lang=\"en\">
-<head>
-    <meta charset=\"UTF-8\">
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-    <title>Budget Planner</title>
-    <script src=\"https://cdn.tailwindcss.com\"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        border: \"hsl(214.3 31.8% 91.4%)\",
-                        input: \"hsl(214.3 31.8% 91.4%)\",
-                        ring: \"hsl(222.2 84% 4.9%)\",
-                        background: \"hsl(0 0% 100%)\",
-                        foreground: \"hsl(222.2 84% 4.9%)\",
-                        primary: {
-                            DEFAULT: \"hsl(222.2 47.4% 11.2%)\",
-                            foreground: \"hsl(210 40% 98%)\",
-                        },
-                        secondary: {
-                            DEFAULT: \"hsl(210 40% 96%)\",
-                            foreground: \"hsl(222.2 84% 4.9%)\",
-                        },
-                        destructive: {
-                            DEFAULT: \"hsl(0 84.2% 60.2%)\",
-                            foreground: \"hsl(210 40% 98%)\",
-                        },
-                        muted: {
-                            DEFAULT: \"hsl(210 40% 96%)\",
-                            foreground: \"hsl(215.4 16.3% 43.9%)\",
-                        },
-                        accent: {
-                            DEFAULT: \"hsl(210 40% 96%)\",
-                            foreground: \"hsl(222.2 84% 4.9%)\",
-                        },
-                        popover: {
-                            DEFAULT: \"hsl(0 0% 100%)\",
-                            foreground: \"hsl(222.2 84% 4.9%)\",
-                        },
-                        card: {
-                            DEFAULT: \"hsl(0 0% 100%)\",
-                            foreground: \"hsl(222.2 84% 4.9%)\",
-                        },
-                    },
-                    borderRadius: {
-                        lg: \"var(--radius)\",
-                        md: \"calc(var(--radius) - 2px)\",
-                        sm: \"calc(var(--radius) - 4px)\",
+import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, query, addDoc, onSnapshot, orderBy } from 'firebase/firestore';
+import { Wallet, ArrowUp, ArrowDown, PiggyBank, Receipt, DollarSign, Calendar, Tag, Clipboard, Loader2, User, Globe } from 'lucide-react';
+
+// --- Global Variable Declarations (Mandatory) ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'budget-app-default-id';
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+// Available Currency Options
+const CURRENCIES = {
+    AED: { code: 'AED', symbol: 'د.إ', locale: 'ar-AE' },
+    USD: { code: 'USD', symbol: '$', locale: 'en-US' },
+    EUR: { code: 'EUR', symbol: '€', locale: 'en-GB' },
+};
+
+// Helper to format currency (Updated to accept currency parameters)
+const formatCurrency = (amount, currencyCode, locale) => {
+    return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 2,
+    }).format(amount);
+};
+
+// Available categories for expenses and incomes
+const CATEGORIES = {
+    expense: ['Bills', 'Food', 'Leisure', 'Transport', 'Shopping', 'Health', 'Other'],
+    income: ['Salary', 'Gift', 'Investment', 'Other'],
+};
+
+// Main App Component
+const App = () => {
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [authReady, setAuthReady] = useState(false);
+    const [transactions, setTransactions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    
+    // State for selected currency, defaulting to AED (Dirhams)
+    const [currency, setCurrency] = useState(CURRENCIES.AED); 
+
+    const [newTransaction, setNewTransaction] = useState({
+        type: 'expense',
+        amount: '',
+        category: CATEGORIES.expense[0],
+        description: '',
+    });
+
+    // 1. Initialize Firebase and Handle Authentication
+    useEffect(() => {
+        try {
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.error("Firebase config is missing. Cannot initialize app.");
+                return;
+            }
+
+            const app = initializeApp(firebaseConfig);
+            const firestore = getFirestore(app);
+            const firebaseAuth = getAuth(app);
+            
+            setDb(firestore);
+            setAuth(firebaseAuth);
+
+            // Authentication listener
+            const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                    setAuthReady(true);
+                    console.log("Authenticated user ID:", user.uid);
+                } else if (!user && !authReady) {
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                        } else {
+                            // Fallback to anonymous sign-in if no token is provided
+                            await signInAnonymously(firebaseAuth);
+                        }
+                    } catch (e) {
+                        console.error("Error signing in:", e);
+                        setUserId(crypto.randomUUID());
+                        setAuthReady(true);
                     }
                 }
-            }
+            });
+
+            return () => unsubscribe();
+        } catch (e) {
+            console.error("Firebase Initialization Error:", e);
         }
-    </script>
-    <style>
-        :root {
-            --radius: 0.5rem;
-        }
-        
-        .card {
-            @apply rounded-lg border bg-card text-card-foreground shadow-sm;
-        }
-        
-        .card-header {
-            @apply flex flex-col space-y-1.5 p-6;
-        }
-        
-        .card-content {
-            @apply p-6 pt-0;
-        }
-        
-        .button {
-            @apply inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
-        }
-        
-        .button-primary {
-            @apply bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2;
-        }
-        
-        .input {
-            @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
-        }
-        
-        .progress {
-            @apply relative h-4 w-full overflow-hidden rounded-full bg-secondary;
-        }
-        
-        .progress-indicator {
-            @apply h-full w-full flex-1 bg-primary transition-all;
-        }
-        
-        .badge {
-            @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
-        }
-        
-        .modal {
-            @apply fixed inset-0 z-50 bg-background/80 backdrop-blur-sm;
-        }
-        
-        .modal-content {
-            @apply fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg;
-        }
-    </style>
-</head>
-<body class=\"min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100\">
-    <div class=\"max-w-7xl mx-auto p-4 space-y-6\">
-        <!-- Header -->
-        <div class=\"text-center py-6\">
-            <h1 class=\"text-4xl font-bold text-gray-800 mb-2\">Budget Planner</h1>
-            <p class=\"text-gray-600\">Track your income and expenses with ease</p>
-        </div>
+    }, [authReady]);
 
-        <!-- Summary Cards -->
-        <div class=\"grid grid-cols-1 md:grid-cols-3 gap-6\">
-            <!-- Total Income Card -->
-            <div class=\"card bg-gradient-to-r from-green-100 to-green-200 border-green-300\">
-                <div class=\"card-header flex flex-row items-center justify-between space-y-0 pb-2\">
-                    <h3 class=\"text-sm font-medium text-green-800\">Total Income</h3>
-                    <svg class=\"h-4 w-4 text-green-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 7h8m0 0v8m0-8l-8 8-4-4-6 6\"/>
-                    </svg>
-                </div>
-                <div class=\"card-content\">
-                    <div class=\"text-2xl font-bold text-green-800\">$3,500.00</div>
-                </div>
-            </div>
-
-            <!-- Total Expenses Card -->
-            <div class=\"card bg-gradient-to-r from-red-100 to-red-200 border-red-300\">
-                <div class=\"card-header flex flex-row items-center justify-between space-y-0 pb-2\">
-                    <h3 class=\"text-sm font-medium text-red-800\">Total Expenses</h3>
-                    <svg class=\"h-4 w-4 text-red-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
-                    </svg>
-                </div>
-                <div class=\"card-content\">
-                    <div class=\"text-2xl font-bold text-red-800\">$2,150.25</div>
-                </div>
-            </div>
-
-            <!-- Balance Card -->
-            <div class=\"card bg-gradient-to-r from-blue-100 to-blue-200 border-blue-300\">
-                <div class=\"card-header flex flex-row items-center justify-between space-y-0 pb-2\">
-                    <h3 class=\"text-sm font-medium text-blue-800\">Balance</h3>
-                    <svg class=\"h-4 w-4 text-blue-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1\"/>
-                    </svg>
-                </div>
-                <div class=\"card-content\">
-                    <div class=\"text-2xl font-bold text-blue-800\">$1,349.75</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Add Transaction Button -->
-        <div class=\"flex justify-center\">
-            <button class=\"button button-primary bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105\" onclick=\"showTransactionModal()\">
-                <svg class=\"mr-2 h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                    <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 4v16m8-8H4\"/>
-                </svg>
-                Add Transaction
-            </button>
-        </div>
-
-        <!-- Main Content Grid -->
-        <div class=\"grid grid-cols-1 lg:grid-cols-2 gap-6\">
-            <!-- Left Column - Category Summary -->
-            <div class=\"space-y-6\">
-                <div class=\"card bg-white/80 backdrop-blur-sm shadow-lg border-0\">
-                    <div class=\"card-header\">
-                        <h3 class=\"text-lg font-semibold text-gray-800\">Category Summary</h3>
-                    </div>
-                    <div class=\"card-content\">
-                        <div class=\"space-y-4\">
-                            <!-- Food Category -->
-                            <div class=\"space-y-2\">
-                                <div class=\"flex items-center justify-between\">
-                                    <div class=\"flex items-center space-x-2\">
-                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #FFE4E1;\"></div>
-                                        <span class=\"font-medium text-gray-700\">Food</span>
-                                    </div>
-                                    <div class=\"text-sm font-medium\">
-                                        <span class=\"text-gray-600\">$61.25</span>
-                                        <span class=\"text-gray-400\"> / $500</span>
-                                    </div>
-                                </div>
-                                <div class=\"space-y-1\">
-                                    <div class=\"progress\">
-                                        <div class=\"progress-indicator\" style=\"width: 12.25%; background-color: #10b981;\"></div>
-                                    </div>
-                                    <div class=\"flex justify-between text-xs text-gray-500\">
-                                        <span>12.3% used</span>
-                                        <span>$438.75 left</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Transportation Category -->
-                            <div class=\"space-y-2\">
-                                <div class=\"flex items-center justify-between\">
-                                    <div class=\"flex items-center space-x-2\">
-                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #E6F3FF;\"></div>
-                                        <span class=\"font-medium text-gray-700\">Transportation</span>
-                                    </div>
-                                    <div class=\"text-sm font-medium\">
-                                        <span class=\"text-gray-600\">$25.00</span>
-                                        <span class=\"text-gray-400\"> / $300</span>
-                                    </div>
-                                </div>
-                                <div class=\"space-y-1\">
-                                    <div class=\"progress\">
-                                        <div class=\"progress-indicator\" style=\"width: 8.33%; background-color: #10b981;\"></div>
-                                    </div>
-                                    <div class=\"flex justify-between text-xs text-gray-500\">
-                                        <span>8.3% used</span>
-                                        <span>$275.00 left</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Entertainment Category -->
-                            <div class=\"space-y-2\">
-                                <div class=\"flex items-center justify-between\">
-                                    <div class=\"flex items-center space-x-2\">
-                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #F0FFF0;\"></div>
-                                        <span class=\"font-medium text-gray-700\">Entertainment</span>
-                                    </div>
-                                    <div class=\"text-sm font-medium\">
-                                        <span class=\"text-gray-600\">$80.00</span>
-                                        <span class=\"text-gray-400\"> / $200</span>
-                                    </div>
-                                </div>
-                                <div class=\"space-y-1\">
-                                    <div class=\"progress\">
-                                        <div class=\"progress-indicator\" style=\"width: 40%; background-color: #10b981;\"></div>
-                                    </div>
-                                    <div class=\"flex justify-between text-xs text-gray-500\">
-                                        <span>40.0% used</span>
-                                        <span>$120.00 left</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Bills Category -->
-                            <div class=\"space-y-2\">
-                                <div class=\"flex items-center justify-between\">
-                                    <div class=\"flex items-center space-x-2\">
-                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #FFF8DC;\"></div>
-                                        <span class=\"font-medium text-gray-700\">Bills</span>
-                                    </div>
-                                    <div class=\"text-sm font-medium\">
-                                        <span class=\"text-gray-600\">$120.00</span>
-                                        <span class=\"text-gray-400\"> / $800</span>
-                                    </div>
-                                </div>
-                                <div class=\"space-y-1\">
-                                    <div class=\"progress\">
-                                        <div class=\"progress-indicator\" style=\"width: 15%; background-color: #10b981;\"></div>
-                                    </div>
-                                    <div class=\"flex justify-between text-xs text-gray-500\">
-                                        <span>15.0% used</span>
-                                        <span>$680.00 left</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Shopping Category -->
-                            <div class=\"space-y-2\">
-                                <div class=\"flex items-center justify-between\">
-                                    <div class=\"flex items-center space-x-2\">
-                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #F5F0FF;\"></div>
-                                        <span class=\"font-medium text-gray-700\">Shopping</span>
-                                    </div>
-                                    <div class=\"text-sm font-medium\">
-                                        <span class=\"text-gray-600\">$200.00</span>
-                                        <span class=\"text-gray-400\"> / $400</span>
-                                    </div>
-                                </div>
-                                <div class=\"space-y-1\">
-                                    <div class=\"progress\">
-                                        <div class=\"progress-indicator\" style=\"width: 50%; background-color: #10b981;\"></div>
-                                    </div>
-                                    <div class=\"flex justify-between text-xs text-gray-500\">
-                                        <span>50.0% used</span>
-                                        <span>$200.00 left</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Healthcare Category -->
-                            <div class=\"space-y-2\">
-                                <div class=\"flex items-center justify-between\">
-                                    <div class=\"flex items-center space-x-2\">
-                                        <div class=\"w-3 h-3 rounded-full\" style=\"background-color: #FFE4E6;\"></div>
-                                        <span class=\"font-medium text-gray-700\">Healthcare</span>
-                                    </div>
-                                    <div class=\"text-sm font-medium\">
-                                        <span class=\"text-gray-600\">$60.00</span>
-                                        <span class=\"text-gray-400\"> / $250</span>
-                                    </div>
-                                </div>
-                                <div class=\"space-y-1\">
-                                    <div class=\"progress\">
-                                        <div class=\"progress-indicator\" style=\"width: 24%; background-color: #10b981;\"></div>
-                                    </div>
-                                    <div class=\"flex justify-between text-xs text-gray-500\">
-                                        <span>24.0% used</span>
-                                        <span>$190.00 left</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Monthly Chart -->
-                <div class=\"card bg-white/80 backdrop-blur-sm shadow-lg border-0\">
-                    <div class=\"card-header\">
-                        <h3 class=\"text-lg font-semibold text-gray-800 flex items-center\">
-                            <svg class=\"mr-2 h-5 w-5 text-purple-600\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z\"/>
-                            </svg>
-                            Monthly Overview
-                        </h3>
-                    </div>
-                    <div class=\"card-content\">
-                        <div class=\"space-y-6\">
-                            <!-- January 2025 -->
-                            <div class=\"space-y-3\">
-                                <div class=\"flex justify-between items-center\">
-                                    <h4 class=\"font-medium text-gray-700\">Jan 2025</h4>
-                                    <div class=\"text-sm text-gray-500\">
-                                        Net: <span class=\"font-medium text-green-600\">$1,349.75</span>
-                                    </div>
-                                </div>
-                                
-                                <!-- Income Bar -->
-                                <div class=\"space-y-1\">
-                                    <div class=\"flex justify-between text-sm\">
-                                        <span class=\"text-green-700 font-medium\">Income</span>
-                                        <span class=\"text-green-700\">$3,500.00</span>
-                                    </div>
-                                    <div class=\"w-full bg-gray-200 rounded-full h-3\">
-                                        <div class=\"bg-gradient-to-r from-green-400 to-green-500 h-3 rounded-full transition-all duration-500 ease-out\" style=\"width: 100%;\"></div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Expenses Bar -->
-                                <div class=\"space-y-1\">
-                                    <div class=\"flex justify-between text-sm\">
-                                        <span class=\"text-red-700 font-medium\">Expenses</span>
-                                        <span class=\"text-red-700\">$2,150.25</span>
-                                    </div>
-                                    <div class=\"w-full bg-gray-200 rounded-full h-3\">
-                                        <div class=\"bg-gradient-to-r from-red-400 to-red-500 h-3 rounded-full transition-all duration-500 ease-out\" style=\"width: 61.4%;\"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column - Recent Transactions -->
-            <div class=\"space-y-6\">
-                <div class=\"card bg-white/80 backdrop-blur-sm shadow-lg border-0\">
-                    <div class=\"card-header\">
-                        <h3 class=\"text-lg font-semibold text-gray-800 flex items-center\">
-                            Recent Transactions
-                            <span class=\"badge ml-2 bg-purple-100 text-purple-700\">8</span>
-                        </h3>
-                    </div>
-                    <div class=\"card-content\">
-                        <div class=\"space-y-3 max-h-96 overflow-y-auto\">
-                            <!-- Transaction 1 -->
-                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
-                                <div class=\"flex items-center space-x-3\">
-                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #FFE4E1;\"></div>
-                                    <div class=\"flex-1 min-w-0\">
-                                        <div class=\"flex items-center space-x-2\">
-                                            <p class=\"font-medium text-gray-900 truncate\">Grocery shopping</p>
-                                            <svg class=\"h-4 w-4 text-red-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
-                                            </svg>
-                                        </div>
-                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
-                                            <span>Food</span>
-                                            <span>•</span>
-                                            <span>Jan 15</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class=\"flex-shrink-0\">
-                                    <span class=\"font-semibold text-red-600\">-$45.50</span>
-                                </div>
-                            </div>
-
-                            <!-- Transaction 2 -->
-                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
-                                <div class=\"flex items-center space-x-3\">
-                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #E6F3FF;\"></div>
-                                    <div class=\"flex-1 min-w-0\">
-                                        <div class=\"flex items-center space-x-2\">
-                                            <p class=\"font-medium text-gray-900 truncate\">Gas</p>
-                                            <svg class=\"h-4 w-4 text-red-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
-                                            </svg>
-                                        </div>
-                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
-                                            <span>Transportation</span>
-                                            <span>•</span>
-                                            <span>Jan 14</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class=\"flex-shrink-0\">
-                                    <span class=\"font-semibold text-red-600\">-$25.00</span>
-                                </div>
-                            </div>
-
-                            <!-- Transaction 3 - Income -->
-                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
-                                <div class=\"flex items-center space-x-3\">
-                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #F3F4F6;\"></div>
-                                    <div class=\"flex-1 min-w-0\">
-                                        <div class=\"flex items-center space-x-2\">
-                                            <p class=\"font-medium text-gray-900 truncate\">Monthly salary</p>
-                                            <svg class=\"h-4 w-4 text-green-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 7h8m0 0v8m0-8l-8 8-4-4-6 6\"/>
-                                            </svg>
-                                        </div>
-                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
-                                            <span>Salary</span>
-                                            <span>•</span>
-                                            <span>Jan 1</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class=\"flex-shrink-0\">
-                                    <span class=\"font-semibold text-green-600\">+$3,500.00</span>
-                                </div>
-                            </div>
-
-                            <!-- More transactions... -->
-                            <div class=\"flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 bg-white\">
-                                <div class=\"flex items-center space-x-3\">
-                                    <div class=\"w-3 h-3 rounded-full flex-shrink-0\" style=\"background-color: #FFF8DC;\"></div>
-                                    <div class=\"flex-1 min-w-0\">
-                                        <div class=\"flex items-center space-x-2\">
-                                            <p class=\"font-medium text-gray-900 truncate\">Electricity bill</p>
-                                            <svg class=\"h-4 w-4 text-red-500 flex-shrink-0\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                                                <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 17h8m0 0V9m0 8l-8-8-4 4-6-6\"/>
-                                            </svg>
-                                        </div>
-                                        <div class=\"flex items-center space-x-2 text-sm text-gray-500\">
-                                            <span>Bills</span>
-                                            <span>•</span>
-                                            <span>Jan 13</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class=\"flex-shrink-0\">
-                                    <span class=\"font-semibold text-red-600\">-$120.00</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Transaction Modal (Hidden by default) -->
-    <div id=\"transactionModal\" class=\"modal hidden\">
-        <div class=\"modal-content\">
-            <div class=\"flex items-center justify-between\">
-                <h3 class=\"text-xl font-semibold text-gray-800\">Add Transaction</h3>
-                <button onclick=\"hideTransactionModal()\" class=\"text-gray-500 hover:text-gray-700\">
-                    <svg class=\"h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\">
-                        <path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M6 18L18 6M6 6l12 12\"/>
-                    </svg>
-                </button>
-            </div>
+    // 2. Real-time Transaction Listener (onSnapshot)
+    useEffect(() => {
+        if (db && userId) {
+            setLoading(true);
+            setError('');
             
-            <form class=\"space-y-4 mt-4\">
-                <!-- Transaction Type -->
-                <div class=\"space-y-2\">
-                    <label class=\"text-sm font-medium\">Type</label>
-                    <select class=\"input\">
-                        <option>Select transaction type</option>
-                        <option value=\"income\">Income</option>
-                        <option value=\"expense\">Expense</option>
-                    </select>
-                </div>
+            // Private data path: /artifacts/{appId}/users/{userId}/transactions
+            const collectionPath = `artifacts/${appId}/users/${userId}/transactions`;
+            const q = query(collection(db, collectionPath), orderBy('timestamp', 'desc'));
 
-                <!-- Amount -->
-                <div class=\"space-y-2\">
-                    <label class=\"text-sm font-medium\">Amount ($)</label>
-                    <input type=\"number\" step=\"0.01\" placeholder=\"0.00\" class=\"input\">
-                </div>
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const fetchedTransactions = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data(),
+                    amount: Number(doc.data().amount) // Ensure amount is a number
+                }));
+                setTransactions(fetchedTransactions);
+                setLoading(false);
+            }, (err) => {
+                console.error("Firestore snapshot error:", err);
+                setError("Failed to load transactions. Please check console for details.");
+                setLoading(false);
+            });
 
-                <!-- Category -->
-                <div class=\"space-y-2\">
-                    <label class=\"text-sm font-medium\">Category</label>
-                    <select class=\"input\">
-                        <option>Select category</option>
-                        <option value=\"Food\">Food</option>
-                        <option value=\"Transportation\">Transportation</option>
-                        <option value=\"Entertainment\">Entertainment</option>
-                        <option value=\"Bills\">Bills</option>
-                        <option value=\"Shopping\">Shopping</option>
-                        <option value=\"Healthcare\">Healthcare</option>
-                    </select>
-                </div>
-
-                <!-- Description -->
-                <div class=\"space-y-2\">
-                    <label class=\"text-sm font-medium\">Description</label>
-                    <textarea placeholder=\"Enter transaction description\" class=\"input h-20 resize-none\"></textarea>
-                </div>
-
-                <!-- Date -->
-                <div class=\"space-y-2\">
-                    <label class=\"text-sm font-medium\">Date</label>
-                    <input type=\"date\" class=\"input\">
-                </div>
-
-                <!-- Submit Buttons -->
-                <div class=\"flex space-x-3 pt-4\">
-                    <button type=\"button\" onclick=\"hideTransactionModal()\" class=\"button flex-1 border border-gray-300 bg-white hover:bg-gray-50\">
-                        Cancel
-                    </button>
-                    <button type=\"submit\" class=\"button button-primary flex-1 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white\">
-                        Add Transaction
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <script>
-        function showTransactionModal() {
-            document.getElementById('transactionModal').classList.remove('hidden');
+            return () => unsubscribe();
         }
+    }, [db, userId]);
 
-        function hideTransactionModal() {
-            document.getElementById('transactionModal').classList.add('hidden');
-        }
-
-        // Basic form handling (static - doesn't actually save data)
-        document.querySelector('form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            alert('This is a static HTML demo. The React version has full functionality!');
-            hideTransactionModal();
-        });
-
-        // Close modal when clicking outside
-        document.getElementById('transactionModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                hideTransactionModal();
+    // 3. Calculate Balance and Metrics
+    const { balance, totalIncome, totalExpenses } = useMemo(() => {
+        let income = 0;
+        let expenses = 0;
+        transactions.forEach(t => {
+            if (t.type === 'income') {
+                income += t.amount;
+            } else {
+                expenses += t.amount;
             }
         });
-    </script>
-</body>
-</html>"
-Observation: Create successful: /app/github-files/budget-planner-static.html
+        return {
+            balance: income - expenses,
+            totalIncome: income,
+            totalExpenses: expenses,
+        };
+    }, [transactions]);
+
+    // 4. Handle Form Changes
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setNewTransaction(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleTypeChange = (newType) => {
+        const defaultCategory = CATEGORIES[newType][0];
+        setNewTransaction(prev => ({
+            ...prev,
+            type: newType,
+            category: defaultCategory,
+        }));
+    };
+
+    // 5. Submit Transaction
+    const addTransaction = async (e) => {
+        e.preventDefault();
+        
+        const amountValue = parseFloat(newTransaction.amount);
+
+        if (isNaN(amountValue) || amountValue <= 0) {
+            setError("Please enter a valid amount greater than zero.");
+            return;
+        }
+
+        if (!newTransaction.description.trim()) {
+             setError("Please add a description.");
+             return;
+        }
+
+        if (!db || !userId) {
+            setError("Database not ready. Please wait.");
+            return;
+        }
+
+        setError('');
+
+        const transactionData = {
+            ...newTransaction,
+            amount: amountValue,
+            timestamp: Date.now(),
+        };
+        
+        try {
+            const collectionPath = `artifacts/${appId}/users/${userId}/transactions`;
+            await addDoc(collection(db, collectionPath), transactionData);
+            
+            // Reset form fields after successful submission
+            setNewTransaction({
+                type: 'expense',
+                amount: '',
+                category: CATEGORIES.expense[0],
+                description: '',
+            });
+
+        } catch (e) {
+            console.error("Error adding document: ", e);
+            setError("Failed to save transaction. Please try again.");
+        }
+    };
+
+    // --- Helper Components for UI ---
+
+    const StatsCard = ({ title, amount, icon: Icon, isBalance }) => (
+        <div className={`p-5 rounded-xl shadow-lg ${isBalance ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800'}`}>
+            <div className="flex items-center justify-between">
+                <h3 className={`text-lg font-semibold ${isBalance ? 'text-indigo-200' : 'text-gray-500'}`}>{title}</h3>
+                <Icon className={`w-6 h-6 ${isBalance ? 'text-indigo-300' : (title.includes('Income') ? 'text-green-500' : 'text-red-500')}`} />
+            </div>
+            <p className={`mt-2 text-3xl font-bold ${isBalance ? 'text-white' : 'text-gray-800'}`}>
+                {formatCurrency(amount, currency.code, currency.locale)}
+            </p>
+        </div>
+    );
+
+    const TransactionItem = ({ type, amount, description, category, timestamp }) => {
+        const isIncome = type === 'income';
+        const colorClass = isIncome ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50';
+        const sign = isIncome ? '+' : '-';
+        const Icon = isIncome ? ArrowUp : ArrowDown;
+
+        const date = new Date(timestamp).toLocaleDateString();
+
+        return (
+            <div className="flex justify-between items-center py-4 border-b last:border-b-0">
+                <div className="flex items-center space-x-3">
+                    <div className={`p-2 rounded-full ${colorClass}`}>
+                        <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <p className="font-semibold text-gray-800 capitalize">{description || category}</p>
+                        <p className="text-sm text-gray-500 flex items-center mt-1">
+                            <Tag className="w-3 h-3 mr-1" />
+                            {category}
+                            <span className="mx-2 text-xs">•</span>
+                            <Calendar className="w-3 h-3 mr-1" />
+                            {date}
+                        </p>
+                    </div>
+                </div>
+                <div className="text-right">
+                    <p className={`font-bold text-lg ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
+                        {sign}{formatCurrency(amount, currency.code, currency.locale)}
+                    </p>
+                </div>
+            </div>
+        );
+    };
+
+    // --- Main Render ---
+
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-8 font-inter">
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+                {`
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+                    .font-inter { font-family: 'Inter', sans-serif; }
+                `}
+            </style>
+            
+            <div className="max-w-4xl mx-auto">
+                <header className="text-center mb-10">
+                    <h1 className="text-4xl font-extrabold text-gray-900 flex items-center justify-center">
+                        <PiggyBank className="w-8 h-8 mr-3 text-indigo-600" />
+                        Budget Tracker
+                    </h1>
+                    
+                    <div className="flex justify-center items-center mt-2 text-gray-500">
+                        <p className="text-sm mr-4">User ID: <span className="font-mono text-xs p-1 bg-gray-200 rounded">{userId || 'Loading...'}</span></p>
+
+                        {/* Currency Selector */}
+                        <div className="flex items-center text-sm">
+                            <Globe className="w-4 h-4 mr-1 text-indigo-500" />
+                            <select
+                                value={currency.code}
+                                onChange={(e) => setCurrency(CURRENCIES[e.target.value])}
+                                className="p-1 border border-gray-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer"
+                            >
+                                {Object.values(CURRENCIES).map(c => (
+                                    <option key={c.code} value={c.code}>{c.code} ({c.symbol})</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                </header>
+
+                {error && (
+                    <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg shadow-md" role="alert">
+                        {error}
+                    </div>
+                )}
+                
+                {/* Balance & Stats Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                    <StatsCard 
+                        title="Current Balance" 
+                        amount={balance} 
+                        icon={Wallet} 
+                        isBalance={true}
+                    />
+                    <StatsCard 
+                        title="Total Income" 
+                        amount={totalIncome} 
+                        icon={ArrowUp} 
+                    />
+                    <StatsCard 
+                        title="Total Expenses" 
+                        amount={totalExpenses} 
+                        icon={ArrowDown} 
+                    />
+                </div>
+
+                <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Transaction Form */}
+                    <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-2xl h-fit">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6 border-b pb-3">Record New Transaction</h2>
+                        
+                        <form onSubmit={addTransaction}>
+                            {/* Type Toggle */}
+                            <div className="flex space-x-2 mb-6 p-1 bg-gray-100 rounded-lg">
+                                <button
+                                    type="button"
+                                    onClick={() => handleTypeChange('income')}
+                                    className={`flex-1 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                                        newTransaction.type === 'income' ? 'bg-green-500 text-white shadow-md' : 'text-gray-600 hover:bg-white'
+                                    }`}
+                                >
+                                    Income
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleTypeChange('expense')}
+                                    className={`flex-1 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                                        newTransaction.type === 'expense' ? 'bg-red-500 text-white shadow-md' : 'text-gray-600 hover:bg-white'
+                                    }`}
+                                >
+                                    Expense
+                                </button>
+                            </div>
+
+                            {/* Amount Input */}
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><DollarSign className="w-4 h-4 mr-1" /> Amount ({currency.code})</label>
+                                <input
+                                    type="number"
+                                    name="amount"
+                                    value={newTransaction.amount}
+                                    onChange={handleInputChange}
+                                    step="0.01"
+                                    placeholder={`e.g., 50.00 ${currency.symbol}`}
+                                    required
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                            </div>
+
+                            {/* Category/Source Select */}
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><Tag className="w-4 h-4 mr-1" /> Category</label>
+                                <select
+                                    name="category"
+                                    value={newTransaction.category}
+                                    onChange={handleInputChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                                >
+                                    {CATEGORIES[newTransaction.type].map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Description Input */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><Clipboard className="w-4 h-4 mr-1" /> Description</label>
+                                <input
+                                    type="text"
+                                    name="description"
+                                    value={newTransaction.description}
+                                    onChange={handleInputChange}
+                                    placeholder={newTransaction.type === 'expense' ? 'e.g., Dinner at Italian Place' : 'e.g., Monthly Paycheck'}
+                                    required
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={!authReady}
+                                className={`w-full py-3 rounded-xl font-bold text-white transition duration-300 ${
+                                    !authReady ? 'bg-gray-400' : newTransaction.type === 'income' ? 'bg-green-600 hover:bg-green-700 shadow-md' : 'bg-red-600 hover:bg-red-700 shadow-md'
+                                }`}
+                            >
+                                {newTransaction.type === 'income' ? 'Add Income' : 'Record Expense'}
+                            </button>
+                        </form>
+                    </div>
+
+                    {/* Transaction History */}
+                    <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-2xl">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center border-b pb-3">
+                            <Receipt className="w-6 h-6 mr-2 text-indigo-600" />
+                            Transaction History
+                        </h2>
+
+                        {loading && (
+                            <div className="flex justify-center items-center py-10 text-indigo-600">
+                                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                                Loading transactions...
+                            </div>
+                        )}
+                        
+                        {!loading && transactions.length === 0 && (
+                            <div className="text-center py-10 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                                <p className="font-medium">No transactions yet!</p>
+                                <p className="text-sm mt-1">Add your first income or expense to get started.</p>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            {transactions.map(t => (
+                                <TransactionItem
+                                    key={t.id}
+                                    type={t.type}
+                                    amount={t.amount}
+                                    description={t.description}
+                                    category={t.category}
+                                    timestamp={t.timestamp}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    );
+};
+
+export default App;
