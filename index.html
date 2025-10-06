@@ -1,441 +1,466 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, query, addDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { Wallet, ArrowUp, ArrowDown, PiggyBank, Receipt, DollarSign, Calendar, Tag, Clipboard, Loader2, User, Globe } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Budget Tracker</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font family -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        /* Custom scrollbar style for transactions list */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background-color: #9ca3af;
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #e5e7eb;
+        }
+        /* Style for the button bubbles */
+        .bubble-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        .bubble-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
 
-// --- Global Variable Declarations (Mandatory) ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'budget-app-default-id';
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <div id="app" class="min-h-screen p-4 md:p-8 flex flex-col items-center">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-2">My Budget Hub</h1>
+        <p class="text-gray-600 mb-8">Track your money flow in real-time.</p>
 
-// Available Currency Options
-const CURRENCIES = {
-    AED: { code: 'AED', symbol: 'د.إ', locale: 'ar-AE' },
-    USD: { code: 'USD', symbol: '$', locale: 'en-US' },
-    EUR: { code: 'EUR', symbol: '€', locale: 'en-GB' },
-};
+        <!-- Loading Spinner and Error Message -->
+        <div id="loading-indicator" class="text-center p-6 bg-white rounded-xl shadow-lg transition-opacity duration-300">
+            <svg class="animate-spin -ml-1 mr-3 h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-indigo-600 font-medium">Initializing Database...</p>
+        </div>
+        <p id="error-message" class="text-red-600 font-semibold mt-4 hidden"></p>
 
-// Helper to format currency (Updated to accept currency parameters)
-const formatCurrency = (amount, currencyCode, locale) => {
-    return new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency: currencyCode,
-        minimumFractionDigits: 2,
-    }).format(amount);
-};
+        <!-- Main Content Area -->
+        <div id="main-content" class="w-full max-w-4xl opacity-0 transition-opacity duration-500 hidden">
+            <!-- Header and Balance -->
+            <div class="bg-white p-6 rounded-2xl shadow-xl mb-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                    <p class="text-lg font-medium text-gray-500">Current Balance</p>
+                    <div class="flex items-center space-x-2 mt-2 sm:mt-0">
+                        <label for="currency-select" class="text-sm text-gray-700">Currency:</label>
+                        <select id="currency-select" class="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" onchange="saveCurrency()">
+                            <option value="$">$ (USD)</option>
+                            <option value="€">€ (EUR)</option>
+                            <option value="£">£ (GBP)</option>
+                            <option value="¥">¥ (JPY/CNY)</option>
+                            <option value="₹">₹ (INR)</option>
+                            <option value="A$">A$ (AUD)</option>
+                            <!-- NEW: Added UAE Dirham -->
+                            <option value="د.إ">د.إ (AED)</option>
+                        </select>
+                    </div>
+                </div>
+                <p id="current-balance" class="text-5xl font-extrabold text-gray-900 transition-colors duration-500">$0.00</p>
+                <p class="text-xs text-gray-400 mt-2">User ID: <span id="user-id-display" class="font-mono text-sm">...</span></p>
+            </div>
 
-// Available categories for expenses and incomes
-const CATEGORIES = {
-    expense: ['Bills', 'Food', 'Leisure', 'Transport', 'Shopping', 'Health', 'Other'],
-    income: ['Salary', 'Gift', 'Investment', 'Other'],
-};
+            <!-- Transaction Input Forms -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
-// Main App Component
-const App = () => {
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [authReady, setAuthReady] = useState(false);
-    const [transactions, setTransactions] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    
-    // State for selected currency, defaulting to AED (Dirhams)
-    const [currency, setCurrency] = useState(CURRENCIES.AED); 
+                <!-- Income Input Card -->
+                <div class="bg-green-50 border-2 border-green-200 p-6 rounded-2xl shadow-lg">
+                    <h2 class="text-2xl font-bold text-green-700 mb-4">Add Income</h2>
+                    <form id="income-form" onsubmit="handleTransaction(event, 'income')">
+                        <input type="hidden" name="category" value="Income">
 
-    const [newTransaction, setNewTransaction] = useState({
-        type: 'expense',
-        amount: '',
-        category: CATEGORIES.expense[0],
-        description: '',
-    });
+                        <div class="mb-4">
+                            <label for="income-description" class="block text-sm font-medium text-gray-700">Source / Description</label>
+                            <input type="text" id="income-description" name="description" required placeholder="Salary, Gift, Freelance Job" class="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-green-500 focus:border-green-500">
+                        </div>
 
-    // 1. Initialize Firebase and Handle Authentication
-    useEffect(() => {
-        try {
-            if (Object.keys(firebaseConfig).length === 0) {
-                console.error("Firebase config is missing. Cannot initialize app.");
+                        <div class="mb-4">
+                            <label for="income-amount" class="block text-sm font-medium text-gray-700">Amount</label>
+                            <div class="relative mt-1 rounded-xl shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span id="income-currency-symbol" class="text-gray-500 sm:text-sm">$</span>
+                                </div>
+                                <!-- FIX: Changed type to 'text' and added inputmode/pattern for better cross-locale input -->
+                                <input type="text" id="income-amount" name="amount" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]+" required placeholder="500.00" class="block w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-green-500 focus:border-green-500">
+                            </div>
+                            <p id="income-error" class="text-sm text-red-500 mt-1 hidden font-medium">Please enter a valid positive number (e.g., 100.00 or 100,00).</p>
+                        </div>
+
+                        <button type="submit" class="bubble-btn w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-xl transition duration-200 shadow-md shadow-green-300">
+                            + Record Income
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Expense Input Card -->
+                <div class="bg-red-50 border-2 border-red-200 p-6 rounded-2xl shadow-lg">
+                    <h2 class="text-2xl font-bold text-red-700 mb-4">Add Expense</h2>
+                    <form id="expense-form" onsubmit="handleTransaction(event, 'expense')">
+                        <div class="mb-4">
+                            <label for="expense-description" class="block text-sm font-medium text-gray-700">Item / Description</label>
+                            <input type="text" id="expense-description" name="description" required placeholder="Groceries, Rent, Coffee" class="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-red-500 focus:border-red-500">
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="expense-category" class="block text-sm font-medium text-gray-700">Category</label>
+                            <select id="expense-category" name="category" required class="mt-1 block w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-red-500 focus:border-red-500">
+                                <option value="" disabled selected>Select Category</option>
+                                <option value="Bills">Bills (Rent, Utilities)</option>
+                                <option value="Leisure">Leisure (Fun, Hobbies)</option>
+                                <option value="Food">Food (Groceries, Dining)</option>
+                                <option value="Transport">Transport (Gas, Transit)</option>
+                                <option value="Health">Health / Wellness</option>
+                                <option value="Other">Other Spendage</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="expense-amount" class="block text-sm font-medium text-gray-700">Amount</label>
+                            <div class="relative mt-1 rounded-xl shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <span id="expense-currency-symbol" class="text-gray-500 sm:text-sm">$</span>
+                                </div>
+                                <!-- FIX: Changed type to 'text' and added inputmode/pattern for better cross-locale input -->
+                                <input type="text" id="expense-amount" name="amount" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]+" required placeholder="25.50" class="block w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-red-500 focus:border-red-500">
+                            </div>
+                            <p id="expense-error" class="text-sm text-red-500 mt-1 hidden font-medium">Please enter a valid positive number (e.g., 25.50 or 25,50).</p>
+                        </div>
+
+                        <button type="submit" class="bubble-btn w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition duration-200 shadow-md shadow-red-300">
+                            - Record Expense
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Transaction History -->
+            <div class="bg-white p-6 rounded-2xl shadow-xl">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Transaction History</h2>
+                <div id="transactions-list" class="space-y-3 custom-scroll max-h-96 overflow-y-auto p-2">
+                    <!-- Transactions will be rendered here -->
+                    <p class="text-center text-gray-500 p-4" id="no-transactions-message">No transactions recorded yet. Add your first income or expense!</p>
+                </div>
+            </div>
+
+            <!-- Custom Modal for Delete Confirmation -->
+            <div id="delete-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
+                <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
+                    <h3 class="text-xl font-bold text-red-600 mb-4">Confirm Deletion</h3>
+                    <p id="modal-text" class="text-gray-700 mb-6">Are you sure you want to delete this transaction?</p>
+                    <div class="flex justify-end space-x-3">
+                        <button onclick="closeDeleteModal()" class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition duration-150">Cancel</button>
+                        <button id="confirm-delete-btn" class="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition duration-150">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, onSnapshot, collection, query, deleteDoc, serverTimestamp, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL VARIABLES & CONSTANTS ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-budget-app';
+
+        let app, db, auth;
+        let userId = null;
+        let currentCurrency = '$';
+        let transactions = [];
+
+        // UI Elements
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const mainContent = document.getElementById('main-content');
+        const errorMessage = document.getElementById('error-message');
+        const currentBalanceEl = document.getElementById('current-balance');
+        const transactionsListEl = document.getElementById('transactions-list');
+        const noTransactionsMessage = document.getElementById('no-transactions-message');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // Firestore paths utility
+        const getPrivatePath = (collectionName) => `/artifacts/${appId}/users/${userId}/${collectionName}`;
+        const getSettingsDocRef = () => doc(db, getPrivatePath('settings'), 'user_preferences');
+
+        // --- AUTHENTICATION & INITIALIZATION ---
+        window.initializeAppData = async () => {
+            if (!firebaseConfig) {
+                console.error("Firebase config not found. Running in mock mode.");
+                errorMessage.textContent = "Error: Firebase configuration is missing. Cannot save data.";
+                errorMessage.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden');
+                mainContent.classList.remove('hidden');
+                mainContent.classList.add('opacity-100');
                 return;
             }
 
-            const app = initializeApp(firebaseConfig);
-            const firestore = getFirestore(app);
-            const firebaseAuth = getAuth(app);
-            
-            setDb(firestore);
-            setAuth(firebaseAuth);
+            try {
+                // Set Firestore logging for debugging
+                setLogLevel('Debug');
 
-            // Authentication listener
-            const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                    setAuthReady(true);
-                    console.log("Authenticated user ID:", user.uid);
-                } else if (!user && !authReady) {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                        } else {
-                            // Fallback to anonymous sign-in if no token is provided
-                            await signInAnonymously(firebaseAuth);
-                        }
-                    } catch (e) {
-                        console.error("Error signing in:", e);
-                        setUserId(crypto.randomUUID());
-                        setAuthReady(true);
-                    }
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // 1. Authenticate User
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
                 }
-            });
 
-            return () => unsubscribe();
-        } catch (e) {
-            console.error("Firebase Initialization Error:", e);
-        }
-    }, [authReady]);
+                // 2. Wait for Auth state to be ready
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = userId;
 
-    // 2. Real-time Transaction Listener (onSnapshot)
-    useEffect(() => {
-        if (db && userId) {
-            setLoading(true);
-            setError('');
-            
-            // Private data path: /artifacts/{appId}/users/{userId}/transactions
-            const collectionPath = `artifacts/${appId}/users/${userId}/transactions`;
-            const q = query(collection(db, collectionPath), orderBy('timestamp', 'desc'));
+                        // 3. Load Settings (Currency)
+                        loadCurrency().then(() => {
+                            // 4. Start Real-time Listeners
+                            startTransactionListener();
 
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const fetchedTransactions = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    amount: Number(doc.data().amount) // Ensure amount is a number
-                }));
-                setTransactions(fetchedTransactions);
-                setLoading(false);
-            }, (err) => {
-                console.error("Firestore snapshot error:", err);
-                setError("Failed to load transactions. Please check console for details.");
-                setLoading(false);
-            });
+                            // 5. Hide Loading, Show Content
+                            loadingIndicator.classList.add('hidden');
+                            mainContent.classList.remove('hidden');
+                            setTimeout(() => mainContent.classList.add('opacity-100'), 50); // Small delay for transition
+                        });
 
-            return () => unsubscribe();
-        }
-    }, [db, userId]);
+                    } else {
+                        console.error("Authentication failed.");
+                        errorMessage.textContent = "Error: Failed to authenticate user.";
+                        errorMessage.classList.remove('hidden');
+                        loadingIndicator.classList.add('hidden');
+                    }
+                });
 
-    // 3. Calculate Balance and Metrics
-    const { balance, totalIncome, totalExpenses } = useMemo(() => {
-        let income = 0;
-        let expenses = 0;
-        transactions.forEach(t => {
-            if (t.type === 'income') {
-                income += t.amount;
-            } else {
-                expenses += t.amount;
+            } catch (e) {
+                console.error("Initialization error:", e);
+                errorMessage.textContent = `Error during initialization: ${e.message}`;
+                errorMessage.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden');
             }
-        });
-        return {
-            balance: income - expenses,
-            totalIncome: income,
-            totalExpenses: expenses,
         };
-    }, [transactions]);
 
-    // 4. Handle Form Changes
-    const handleInputChange = (e) => {
-        const { name, value } = e.target;
-        setNewTransaction(prev => ({ ...prev, [name]: value }));
-    };
+        // --- CURRENCY HANDLING ---
 
-    const handleTypeChange = (newType) => {
-        const defaultCategory = CATEGORIES[newType][0];
-        setNewTransaction(prev => ({
-            ...prev,
-            type: newType,
-            category: defaultCategory,
-        }));
-    };
-
-    // 5. Submit Transaction
-    const addTransaction = async (e) => {
-        e.preventDefault();
-        
-        const amountValue = parseFloat(newTransaction.amount);
-
-        if (isNaN(amountValue) || amountValue <= 0) {
-            setError("Please enter a valid amount greater than zero.");
-            return;
-        }
-
-        if (!newTransaction.description.trim()) {
-             setError("Please add a description.");
-             return;
-        }
-
-        if (!db || !userId) {
-            setError("Database not ready. Please wait.");
-            return;
-        }
-
-        setError('');
-
-        const transactionData = {
-            ...newTransaction,
-            amount: amountValue,
-            timestamp: Date.now(),
-        };
-        
-        try {
-            const collectionPath = `artifacts/${appId}/users/${userId}/transactions`;
-            await addDoc(collection(db, collectionPath), transactionData);
-            
-            // Reset form fields after successful submission
-            setNewTransaction({
-                type: 'expense',
-                amount: '',
-                category: CATEGORIES.expense[0],
-                description: '',
+        window.updateCurrencyDisplay = () => {
+            document.querySelectorAll('[id$="-currency-symbol"]').forEach(el => {
+                el.textContent = currentCurrency;
             });
+            document.getElementById('currency-select').value = currentCurrency;
+            updateBalanceAndDisplay();
+        };
 
-        } catch (e) {
-            console.error("Error adding document: ", e);
-            setError("Failed to save transaction. Please try again.");
-        }
-    };
+        const loadCurrency = async () => {
+            const settingsRef = getSettingsDocRef();
+            try {
+                const docSnap = await getDoc(settingsRef);
+                if (docSnap.exists()) {
+                    currentCurrency = docSnap.data().currencySymbol || '$';
+                }
+                updateCurrencyDisplay();
+            } catch (e) {
+                console.warn("Could not load currency settings, using default '$'.", e);
+                updateCurrencyDisplay();
+            }
+        };
 
-    // --- Helper Components for UI ---
+        window.saveCurrency = async () => {
+            const newCurrency = document.getElementById('currency-select').value;
+            currentCurrency = newCurrency;
+            updateCurrencyDisplay();
+            const settingsRef = getSettingsDocRef();
+            try {
+                await setDoc(settingsRef, { currencySymbol: newCurrency }, { merge: true });
+                console.log("Currency saved successfully.");
+            } catch (e) {
+                console.error("Error saving currency:", e);
+                // Show a temporary error message in UI if needed
+            }
+        };
 
-    const StatsCard = ({ title, amount, icon: Icon, isBalance }) => (
-        <div className={`p-5 rounded-xl shadow-lg ${isBalance ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800'}`}>
-            <div className="flex items-center justify-between">
-                <h3 className={`text-lg font-semibold ${isBalance ? 'text-indigo-200' : 'text-gray-500'}`}>{title}</h3>
-                <Icon className={`w-6 h-6 ${isBalance ? 'text-indigo-300' : (title.includes('Income') ? 'text-green-500' : 'text-red-500')}`} />
-            </div>
-            <p className={`mt-2 text-3xl font-bold ${isBalance ? 'text-white' : 'text-gray-800'}`}>
-                {formatCurrency(amount, currency.code, currency.locale)}
-            </p>
-        </div>
-    );
 
-    const TransactionItem = ({ type, amount, description, category, timestamp }) => {
-        const isIncome = type === 'income';
-        const colorClass = isIncome ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50';
-        const sign = isIncome ? '+' : '-';
-        const Icon = isIncome ? ArrowUp : ArrowDown;
+        // --- TRANSACTION LOGIC (CRUD) ---
 
-        const date = new Date(timestamp).toLocaleDateString();
+        const startTransactionListener = () => {
+            const q = query(collection(db, getPrivatePath('transactions')));
+            // Listen for real-time updates
+            onSnapshot(q, (snapshot) => {
+                transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Sort transactions by timestamp descending
+                transactions.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                renderTransactions();
+                updateBalanceAndDisplay();
+            }, (error) => {
+                console.error("Error listening to transactions:", error);
+                errorMessage.textContent = "Error fetching transactions: " + error.message;
+                errorMessage.classList.remove('hidden');
+            });
+        };
 
-        return (
-            <div className="flex justify-between items-center py-4 border-b last:border-b-0">
-                <div className="flex items-center space-x-3">
-                    <div className={`p-2 rounded-full ${colorClass}`}>
-                        <Icon className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <p className="font-semibold text-gray-800 capitalize">{description || category}</p>
-                        <p className="text-sm text-gray-500 flex items-center mt-1">
-                            <Tag className="w-3 h-3 mr-1" />
-                            {category}
-                            <span className="mx-2 text-xs">•</span>
-                            <Calendar className="w-3 h-3 mr-1" />
-                            {date}
-                        </p>
-                    </div>
-                </div>
-                <div className="text-right">
-                    <p className={`font-bold text-lg ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
-                        {sign}{formatCurrency(amount, currency.code, currency.locale)}
-                    </p>
-                </div>
-            </div>
-        );
-    };
+        window.handleTransaction = async (event, type) => {
+            event.preventDefault();
 
-    // --- Main Render ---
-
-    return (
-        <div className="min-h-screen bg-gray-50 p-4 sm:p-8 font-inter">
-            <script src="https://cdn.tailwindcss.com"></script>
-            <style>
-                {`
-                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-                    .font-inter { font-family: 'Inter', sans-serif; }
-                `}
-            </style>
+            const form = event.target;
+            const errorElementId = type === 'income' ? 'income-error' : 'expense-error';
+            const errorElement = document.getElementById(errorElementId);
             
-            <div className="max-w-4xl mx-auto">
-                <header className="text-center mb-10">
-                    <h1 className="text-4xl font-extrabold text-gray-900 flex items-center justify-center">
-                        <PiggyBank className="w-8 h-8 mr-3 text-indigo-600" />
-                        Budget Tracker
-                    </h1>
-                    
-                    <div className="flex justify-center items-center mt-2 text-gray-500">
-                        <p className="text-sm mr-4">User ID: <span className="font-mono text-xs p-1 bg-gray-200 rounded">{userId || 'Loading...'}</span></p>
+            // Hide previous error
+            errorElement.classList.add('hidden');
+            
+            const description = form.elements.description.value.trim();
+            
+            // FIX: Use type="text" and robust parsing. Replace comma with period for universal parseFloat recognition.
+            let amountString = form.elements.amount.value.trim().replace(',', '.');
+            const amount = parseFloat(amountString);
+            
+            const category = form.elements.category ? form.elements.category.value : type;
 
-                        {/* Currency Selector */}
-                        <div className="flex items-center text-sm">
-                            <Globe className="w-4 h-4 mr-1 text-indigo-500" />
-                            <select
-                                value={currency.code}
-                                onChange={(e) => setCurrency(CURRENCIES[e.target.value])}
-                                className="p-1 border border-gray-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer"
-                            >
-                                {Object.values(CURRENCIES).map(c => (
-                                    <option key={c.code} value={c.code}>{c.code} ({c.symbol})</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                </header>
-
-                {error && (
-                    <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg shadow-md" role="alert">
-                        {error}
-                    </div>
-                )}
+            if (isNaN(amount) || amount <= 0 || !description) {
+                // This client-side check is the final validation for a positive amount
+                console.error("Invalid input: Amount must be a positive number.");
                 
-                {/* Balance & Stats Summary */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                    <StatsCard 
-                        title="Current Balance" 
-                        amount={balance} 
-                        icon={Wallet} 
-                        isBalance={true}
-                    />
-                    <StatsCard 
-                        title="Total Income" 
-                        amount={totalIncome} 
-                        icon={ArrowUp} 
-                    />
-                    <StatsCard 
-                        title="Total Expenses" 
-                        amount={totalExpenses} 
-                        icon={ArrowDown} 
-                    />
-                </div>
+                // Only show error for amount if it's the issue (description uses native 'required' tooltip)
+                if (isNaN(amount) || amount <= 0) {
+                    errorElement.classList.remove('hidden');
+                }
+                return;
+            }
 
-                <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Transaction Form */}
-                    <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-2xl h-fit">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-6 border-b pb-3">Record New Transaction</h2>
-                        
-                        <form onSubmit={addTransaction}>
-                            {/* Type Toggle */}
-                            <div className="flex space-x-2 mb-6 p-1 bg-gray-100 rounded-lg">
-                                <button
-                                    type="button"
-                                    onClick={() => handleTypeChange('income')}
-                                    className={`flex-1 py-2 rounded-lg font-semibold transition-all duration-200 ${
-                                        newTransaction.type === 'income' ? 'bg-green-500 text-white shadow-md' : 'text-gray-600 hover:bg-white'
-                                    }`}
-                                >
-                                    Income
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleTypeChange('expense')}
-                                    className={`flex-1 py-2 rounded-lg font-semibold transition-all duration-200 ${
-                                        newTransaction.type === 'expense' ? 'bg-red-500 text-white shadow-md' : 'text-gray-600 hover:bg-white'
-                                    }`}
-                                >
-                                    Expense
-                                </button>
+            try {
+                await addDoc(collection(db, getPrivatePath('transactions')), {
+                    type: type, // 'income' or 'expense'
+                    description: description,
+                    category: category,
+                    amount: amount,
+                    timestamp: serverTimestamp(),
+                });
+
+                // Clear the form on success
+                form.reset();
+            } catch (e) {
+                console.error("Error adding transaction:", e);
+                // NOTE: Use a temporary UI message instead of alert in production
+                alert(`Failed to save transaction: ${e.message}`); 
+            }
+        };
+
+        window.deleteTransaction = (id) => {
+            // Use the global modal to confirm before deleting
+            window.openDeleteModal(id);
+        };
+
+        window.executeDelete = async (id) => {
+            window.closeDeleteModal();
+            try {
+                const docRef = doc(db, getPrivatePath('transactions'), id);
+                await deleteDoc(docRef);
+                console.log("Transaction deleted:", id);
+            } catch (e) {
+                console.error("Error deleting transaction:", e);
+                // NOTE: Use a temporary UI message instead of alert in production
+                alert(`Failed to delete transaction: ${e.message}`);
+            }
+        };
+
+
+        // --- UI RENDERING ---
+
+        window.updateBalanceAndDisplay = () => {
+            const totalIncome = transactions
+                .filter(t => t.type === 'income')
+                .reduce((sum, t) => sum + t.amount, 0);
+
+            const totalExpense = transactions
+                .filter(t => t.type === 'expense')
+                .reduce((sum, t) => sum + t.amount, 0);
+
+            const balance = totalIncome - totalExpense;
+
+            currentBalanceEl.textContent = `${currentCurrency}${balance.toFixed(2)}`;
+            currentBalanceEl.className = `text-5xl font-extrabold transition-colors duration-500 ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
+        };
+
+        const renderTransactions = () => {
+            transactionsListEl.innerHTML = ''; // Clear existing list
+
+            if (transactions.length === 0) {
+                noTransactionsMessage.classList.remove('hidden');
+                return;
+            } else {
+                noTransactionsMessage.classList.add('hidden');
+            }
+
+            transactions.forEach(t => {
+                const isIncome = t.type === 'income';
+                const sign = isIncome ? '+' : '-';
+                const color = isIncome ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50';
+                const borderColor = isIncome ? 'border-green-300' : 'border-red-300';
+                const formattedAmount = `${sign}${currentCurrency}${Math.abs(t.amount).toFixed(2)}`;
+                const categoryText = isIncome ? 'Income' : t.category;
+
+                const date = t.timestamp ? new Date(t.timestamp.toMillis()) : new Date();
+                const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+                const itemHtml = `
+                    <div class="flex items-center justify-between p-4 border-l-4 ${borderColor} ${color} rounded-xl shadow-sm transition hover:shadow-md">
+                        <div class="flex flex-col sm:flex-row sm:items-center w-full">
+                            <div class="flex-grow">
+                                <p class="font-semibold text-lg truncate">${t.description}</p>
+                                <p class="text-xs text-gray-500 mt-0.5"><span class="font-medium">${categoryText}</span> • ${formattedDate}</p>
                             </div>
-
-                            {/* Amount Input */}
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><DollarSign className="w-4 h-4 mr-1" /> Amount ({currency.code})</label>
-                                <input
-                                    type="number"
-                                    name="amount"
-                                    value={newTransaction.amount}
-                                    onChange={handleInputChange}
-                                    step="0.01"
-                                    placeholder={`e.g., 50.00 ${currency.symbol}`}
-                                    required
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                                />
-                            </div>
-
-                            {/* Category/Source Select */}
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><Tag className="w-4 h-4 mr-1" /> Category</label>
-                                <select
-                                    name="category"
-                                    value={newTransaction.category}
-                                    onChange={handleInputChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                                >
-                                    {CATEGORIES[newTransaction.type].map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Description Input */}
-                            <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center"><Clipboard className="w-4 h-4 mr-1" /> Description</label>
-                                <input
-                                    type="text"
-                                    name="description"
-                                    value={newTransaction.description}
-                                    onChange={handleInputChange}
-                                    placeholder={newTransaction.type === 'expense' ? 'e.g., Dinner at Italian Place' : 'e.g., Monthly Paycheck'}
-                                    required
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                                />
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={!authReady}
-                                className={`w-full py-3 rounded-xl font-bold text-white transition duration-300 ${
-                                    !authReady ? 'bg-gray-400' : newTransaction.type === 'income' ? 'bg-green-600 hover:bg-green-700 shadow-md' : 'bg-red-600 hover:bg-red-700 shadow-md'
-                                }`}
-                            >
-                                {newTransaction.type === 'income' ? 'Add Income' : 'Record Expense'}
-                            </button>
-                        </form>
-                    </div>
-
-                    {/* Transaction History */}
-                    <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-2xl">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center border-b pb-3">
-                            <Receipt className="w-6 h-6 mr-2 text-indigo-600" />
-                            Transaction History
-                        </h2>
-
-                        {loading && (
-                            <div className="flex justify-center items-center py-10 text-indigo-600">
-                                <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                                Loading transactions...
-                            </div>
-                        )}
-                        
-                        {!loading && transactions.length === 0 && (
-                            <div className="text-center py-10 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
-                                <p className="font-medium">No transactions yet!</p>
-                                <p className="text-sm mt-1">Add your first income or expense to get started.</p>
-                            </div>
-                        )}
-
-                        <div className="space-y-2">
-                            {transactions.map(t => (
-                                <TransactionItem
-                                    key={t.id}
-                                    type={t.type}
-                                    amount={t.amount}
-                                    description={t.description}
-                                    category={t.category}
-                                    timestamp={t.timestamp}
-                                />
-                            ))}
+                            <p class="font-bold text-xl mt-2 sm:mt-0 sm:ml-4 flex-shrink-0">${formattedAmount}</p>
                         </div>
+                        <button onclick="deleteTransaction('${t.id}')" class="ml-4 p-2 text-gray-400 hover:text-red-500 rounded-full transition duration-150 flex-shrink-0">
+                            <!-- Trash icon SVG -->
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
                     </div>
-                </main>
-            </div>
-        </div>
-    );
-};
+                `;
+                transactionsListEl.insertAdjacentHTML('beforeend', itemHtml);
+            });
+        };
 
-export default App;
+        // --- MODAL LOGIC ---
+        const deleteModal = document.getElementById('delete-modal');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+
+        window.openDeleteModal = (transactionId) => {
+            deleteModal.classList.remove('hidden');
+            deleteModal.classList.add('flex');
+            confirmDeleteBtn.onclick = () => executeDelete(transactionId);
+        };
+
+        window.closeDeleteModal = () => {
+            deleteModal.classList.remove('flex');
+            deleteModal.classList.add('hidden');
+            confirmDeleteBtn.onclick = null; // Clear handler
+        };
+
+        // Initialize App on load
+        window.onload = initializeAppData;
+
+    </script>
+</body>
+</html>
